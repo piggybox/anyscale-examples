@@ -7,13 +7,14 @@ from io import BytesIO
 import requests
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
-from typing import Optional, Dict, Any, List
+from typing import Dict, Any, List
+
 
 num_images_to_process = 10**6
-num_gpus = 64
+num_gpus = 1
 
 timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-output_path = f"/mnt/shared_storage/process_images_output/{timestamp}"
+output_path = f"/tmp/shared_storage/process_images_output/{timestamp}"
 
 
 def download_single_image(url: str, session: requests.Session) -> Dict[str, Any]:
@@ -54,7 +55,9 @@ def image_download(batch: Dict[str, List]) -> Dict[str, List]:
 
     # Use ThreadPoolExecutor for parallel downloads
     with ThreadPoolExecutor(max_workers=50) as executor:
-        results = list(executor.map(lambda url: download_single_image(url, session), urls))
+        results = list(
+            executor.map(lambda url: download_single_image(url, session), urls)
+        )
 
     batch["bytes"] = [r["content"] for r in results]
     return batch
@@ -81,27 +84,14 @@ def process_single_image(row: Dict[str, Any]) -> Dict[str, Any]:
 
 
 vision_processor_config = vLLMEngineProcessorConfig(
-    model_source="Qwen/Qwen2.5-VL-3B-Instruct",
-    engine_kwargs=dict(
-        tensor_parallel_size=1,
-        pipeline_parallel_size=1,
-        max_model_len=4096,
-        enable_chunked_prefill=True,
-        max_num_batched_tokens=8192,
-        distributed_executor_backend="mp",
-        gpu_memory_utilization=0.95,
-    ),
-    runtime_env=dict(
-        env_vars=dict(
-            VLLM_USE_V1="1",
-            VLLM_DISABLE_COMPILE_CACHE="1",
-        ),
-    ),
-    batch_size=64,
-    max_concurrent_batches=8,
-    accelerator_type="A10G",
-    concurrency=num_gpus,
-    has_image=True,
+    model_source="unsloth/Llama-3.1-8B-Instruct",
+    concurrency=num_gpus,  # 1 vLLM engine replica
+    batch_size=64,  # 32 samples per batch
+    engine_kwargs={
+        "enable_chunked_prefill": True,
+        "max_num_batched_tokens": 4096,  # Reduce if CUDA OOM occurs
+        "max_model_len": 4096,  # Constrain to fit test GPU memory
+    },
 )
 
 
@@ -156,7 +146,9 @@ dataset = (
     )
     .drop_columns(["url"])
     .map(process_single_image)
-    .filter(lambda row: row["bytes"] is not None)  # Filter out failed downloads/processing
+    .filter(
+        lambda row: row["bytes"] is not None
+    )  # Filter out failed downloads/processing
 )
 
 dataset = vision_processor(dataset)

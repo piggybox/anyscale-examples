@@ -1,0 +1,16 @@
+[project]
+name = "image-processing"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "boto3>=1.41.3",
+    "huggingface-hub>=0.36.0",
+    "pandas>=2.3.3",
+    "pyarrow>=22.0.0",
+    "ray[data,serve]==2.52.0",
+    "transformers==4.57.1",
+    "uvloop==0.21.0",
+    "vllm==0.11.2",
+]
